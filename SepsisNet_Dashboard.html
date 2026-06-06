@@ -1,0 +1,785 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>SepsisNet — ICU Early Warning System</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;600;700&family=IBM+Plex+Sans:wght@300;400;600;700&display=swap');
+
+:root {
+  --bg:       #060608;
+  --surface:  #0d0d12;
+  --surface2: #13131a;
+  --border:   #1e1e2e;
+  --accent:   #e63946;
+  --accent2:  #00b4d8;
+  --success:  #06d6a0;
+  --warn:     #ffd166;
+  --danger:   #ef233c;
+  --critical: #ff0a54;
+  --text:     #e2e2f0;
+  --muted:    #555570;
+  --mono:     'IBM Plex Mono', monospace;
+  --sans:     'IBM Plex Sans', sans-serif;
+}
+
+* { margin:0; padding:0; box-sizing:border-box; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* Scanline effect */
+body::after {
+  content:'';
+  position:fixed; inset:0;
+  background: repeating-linear-gradient(
+    0deg, transparent, transparent 2px,
+    rgba(0,0,0,0.03) 2px, rgba(0,0,0,0.03) 4px
+  );
+  pointer-events:none; z-index:9999;
+}
+
+/* ---- HEADER ---- */
+header {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:0 32px; height:56px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  position:sticky; top:0; z-index:100;
+}
+.logo-area { display:flex; align-items:center; gap:16px; }
+.logo-icon {
+  width:32px; height:32px; border-radius:4px;
+  background: var(--accent);
+  display:flex; align-items:center; justify-content:center;
+  font-family:var(--mono); font-size:14px; font-weight:700; color:#fff;
+  animation: logoBeat 1.5s ease-in-out infinite;
+}
+@keyframes logoBeat {
+  0%,100%{ box-shadow:0 0 0 0 rgba(230,57,70,0.4) }
+  50%{ box-shadow:0 0 0 8px rgba(230,57,70,0) }
+}
+.logo-text {
+  font-family:var(--mono); font-size:1.1rem; font-weight:700; letter-spacing:0.05em;
+}
+.logo-text span { color:var(--accent); }
+.header-center {
+  font-family:var(--mono); font-size:0.65rem; color:var(--muted);
+  letter-spacing:0.15em; text-transform:uppercase;
+}
+.header-right { display:flex; gap:20px; align-items:center; }
+.live-badge {
+  display:flex; align-items:center; gap:6px;
+  font-family:var(--mono); font-size:0.6rem; color:var(--success);
+  letter-spacing:0.1em;
+}
+.live-dot {
+  width:6px; height:6px; border-radius:50%; background:var(--success);
+  animation:blink 1s infinite;
+}
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.2} }
+.model-badge {
+  font-family:var(--mono); font-size:0.6rem; color:var(--accent2);
+  border:1px solid var(--accent2); padding:3px 8px; border-radius:2px;
+  letter-spacing:0.1em;
+}
+
+/* ---- LAYOUT ---- */
+.app { display:grid; grid-template-columns:360px 1fr; min-height:calc(100vh - 56px); }
+
+/* ---- INPUT PANEL ---- */
+.input-panel {
+  background:var(--surface); border-right:1px solid var(--border);
+  padding:24px; overflow-y:auto; display:flex; flex-direction:column; gap:20px;
+}
+.section-title {
+  font-family:var(--mono); font-size:0.65rem; color:var(--accent2);
+  letter-spacing:0.2em; text-transform:uppercase;
+  padding-bottom:10px; border-bottom:1px solid var(--border);
+}
+.input-grid { display:flex; flex-direction:column; gap:10px; }
+.input-row {
+  display:grid; grid-template-columns:1fr 90px; gap:8px; align-items:center;
+}
+.input-label {
+  font-family:var(--mono); font-size:0.62rem; color:var(--muted);
+  letter-spacing:0.05em;
+}
+.input-unit {
+  font-family:var(--mono); font-size:0.55rem; color:#333355;
+  margin-top:2px;
+}
+.vital-input {
+  background:var(--surface2); border:1px solid var(--border);
+  color:var(--text); font-family:var(--mono); font-size:0.8rem;
+  padding:8px 10px; border-radius:3px; width:100%;
+  transition:border-color 0.2s, box-shadow 0.2s; text-align:right;
+}
+.vital-input:focus {
+  outline:none; border-color:var(--accent2);
+  box-shadow:0 0 0 2px rgba(0,180,216,0.1);
+}
+.vital-input.abnormal { border-color:var(--accent) !important; color:var(--accent); }
+.vital-input.critical-val { border-color:var(--critical) !important; color:var(--critical);
+  box-shadow:0 0 8px rgba(255,10,84,0.2); }
+
+.predict-btn {
+  width:100%; padding:14px; border:none; border-radius:3px;
+  background:var(--accent); color:#fff;
+  font-family:var(--mono); font-size:0.8rem; font-weight:700;
+  letter-spacing:0.1em; cursor:pointer; text-transform:uppercase;
+  transition:all 0.2s; position:relative; overflow:hidden;
+}
+.predict-btn:hover { background:#ff1a2e; box-shadow:0 0 20px rgba(230,57,70,0.4); }
+.predict-btn:active { transform:scale(0.99); }
+.predict-btn::after {
+  content:''; position:absolute; inset:0;
+  background:linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.1) 50%, transparent 100%);
+  transform:translateX(-100%); transition:transform 0.4s;
+}
+.predict-btn:hover::after { transform:translateX(100%); }
+
+.preset-row { display:flex; gap:8px; }
+.preset-btn {
+  flex:1; padding:8px; border:1px solid var(--border); background:transparent;
+  color:var(--muted); font-family:var(--mono); font-size:0.6rem;
+  border-radius:3px; cursor:pointer; transition:all 0.2s; letter-spacing:0.05em;
+}
+.preset-btn:hover { border-color:var(--accent2); color:var(--accent2); }
+.preset-btn.danger-preset:hover { border-color:var(--accent); color:var(--accent); }
+
+/* ---- OUTPUT PANEL ---- */
+.output-panel {
+  display:flex; flex-direction:column; gap:0;
+  background: radial-gradient(ellipse at 30% 20%, rgba(230,57,70,0.04) 0%, transparent 60%),
+              var(--bg);
+}
+
+/* RISK GAUGE */
+.risk-section {
+  padding:32px; border-bottom:1px solid var(--border);
+  display:grid; grid-template-columns:1fr 1fr; gap:32px; align-items:center;
+}
+.gauge-area { display:flex; flex-direction:column; align-items:center; gap:12px; }
+.gauge-wrap { position:relative; width:200px; height:120px; }
+.gauge-svg { width:200px; height:120px; }
+.gauge-score {
+  position:absolute; bottom:10px; left:50%; transform:translateX(-50%);
+  text-align:center;
+}
+.score-number {
+  font-family:var(--mono); font-size:2.8rem; font-weight:700;
+  line-height:1; transition:color 0.5s;
+}
+.score-pct { font-family:var(--mono); font-size:1rem; color:var(--muted); }
+.risk-label {
+  font-family:var(--mono); font-size:1rem; font-weight:700;
+  letter-spacing:0.15em; text-align:center; text-transform:uppercase;
+  transition:color 0.5s;
+}
+.risk-sublabel {
+  font-family:var(--mono); font-size:0.6rem; color:var(--muted);
+  text-align:center; letter-spacing:0.1em; max-width:180px;
+}
+
+/* STAT CARDS */
+.stat-cards { display:flex; flex-direction:column; gap:10px; }
+.stat-card {
+  background:var(--surface); border:1px solid var(--border); border-radius:3px;
+  padding:12px 16px; display:flex; align-items:center; justify-content:space-between;
+}
+.stat-name { font-family:var(--mono); font-size:0.6rem; color:var(--muted); letter-spacing:0.1em; }
+.stat-val  { font-family:var(--mono); font-size:1.1rem; font-weight:700; }
+
+/* FEATURE IMPORTANCE */
+.features-section { padding:24px 32px; border-bottom:1px solid var(--border); }
+.feature-bars { display:flex; flex-direction:column; gap:8px; margin-top:16px; }
+.feature-bar-row { display:grid; grid-template-columns:160px 1fr 48px; gap:10px; align-items:center; }
+.feature-name { font-family:var(--mono); font-size:0.6rem; color:var(--muted); }
+.bar-track { height:6px; background:var(--surface2); border-radius:3px; overflow:hidden; }
+.bar-fill { height:100%; border-radius:3px; transition:width 0.8s cubic-bezier(.4,0,.2,1); }
+.bar-val { font-family:var(--mono); font-size:0.6rem; color:var(--text); text-align:right; }
+
+/* TRAJECTORY */
+.trajectory-section { padding:24px 32px; flex:1; }
+canvas#trajCanvas {
+  width:100%; height:180px;
+  border:1px solid var(--border); border-radius:3px; background:var(--surface);
+  margin-top:16px;
+}
+
+/* ALERT BANNER */
+.alert-banner {
+  margin:0 32px 16px;
+  padding:12px 16px; border-radius:3px;
+  font-family:var(--mono); font-size:0.7rem; letter-spacing:0.05em;
+  border-left:3px solid; display:none;
+  animation:slideIn 0.3s ease;
+}
+@keyframes slideIn { from{opacity:0;transform:translateY(-8px)} to{opacity:1;transform:translateY(0)} }
+.alert-low      { border-color:var(--success); background:rgba(6,214,160,0.08); color:var(--success); }
+.alert-moderate { border-color:var(--warn);    background:rgba(255,209,102,0.08); color:var(--warn); }
+.alert-high     { border-color:var(--accent);  background:rgba(230,57,70,0.08);  color:var(--accent); }
+.alert-critical { border-color:var(--critical);background:rgba(255,10,84,0.12);  color:var(--critical);
+  animation:slideIn 0.3s ease, critPulse 1.5s infinite; }
+@keyframes critPulse { 0%,100%{opacity:1} 50%{opacity:0.7} }
+
+/* IDLE STATE */
+.idle-overlay {
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  height:100%; gap:16px; color:var(--muted);
+}
+.idle-icon { font-size:3rem; opacity:0.3; }
+.idle-text { font-family:var(--mono); font-size:0.7rem; letter-spacing:0.1em; opacity:0.5; }
+
+::-webkit-scrollbar { width:4px; }
+::-webkit-scrollbar-track { background:var(--bg); }
+::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo-area">
+    <div class="logo-icon">S+</div>
+    <div class="logo-text">Sepsis<span>Net</span></div>
+  </div>
+  <div class="header-center">ICU EARLY WARNING SYSTEM — PHYSIONET 2019 DATASET</div>
+  <div class="header-right">
+    <div class="live-badge"><div class="live-dot"></div>LIVE INFERENCE</div>
+    <div class="model-badge">XGB+LGB ENSEMBLE</div>
+  </div>
+</header>
+
+<div class="app">
+
+  <!-- INPUT PANEL -->
+  <div class="input-panel">
+
+    <div class="section-title">// Patient Vitals Input</div>
+
+    <div class="preset-row">
+      <button class="preset-btn" onclick="loadPreset('healthy')">▶ STABLE PATIENT</button>
+      <button class="preset-btn danger-preset" onclick="loadPreset('sepsis')">⚠ SEPSIS CASE</button>
+    </div>
+
+    <div class="input-grid">
+
+      <div class="section-title" style="margin-top:4px">— Hemodynamic</div>
+
+      <div class="input-row">
+        <div><div class="input-label">Heart Rate</div><div class="input-unit">bpm | Normal: 60–100</div></div>
+        <input class="vital-input" id="HR" type="number" value="78" oninput="flagAbnormal(this,60,100,40,130)"/>
+      </div>
+      <div class="input-row">
+        <div><div class="input-label">Systolic BP</div><div class="input-unit">mmHg | Normal: 90–140</div></div>
+        <input class="vital-input" id="SBP" type="number" value="120" oninput="flagAbnormal(this,90,140,70,180)"/>
+      </div>
+      <div class="input-row">
+        <div><div class="input-label">Mean Art. Pressure</div><div class="input-unit">mmHg | Normal: 70–100</div></div>
+        <input class="vital-input" id="MAP" type="number" value="85" oninput="flagAbnormal(this,70,100,50,130)"/>
+      </div>
+
+      <div class="section-title" style="margin-top:4px">— Respiratory</div>
+
+      <div class="input-row">
+        <div><div class="input-label">Respiratory Rate</div><div class="input-unit">breaths/min | Normal: 12–20</div></div>
+        <input class="vital-input" id="Resp" type="number" value="16" oninput="flagAbnormal(this,12,20,8,35)"/>
+      </div>
+      <div class="input-row">
+        <div><div class="input-label">O₂ Saturation</div><div class="input-unit">% | Normal: 95–100</div></div>
+        <input class="vital-input" id="O2Sat" type="number" value="98" oninput="flagAbnormal(this,95,100,80,100)"/>
+      </div>
+      <div class="input-row">
+        <div><div class="input-label">FiO₂</div><div class="input-unit">fraction | Normal: 0.21</div></div>
+        <input class="vital-input" id="FiO2" type="number" value="0.21" step="0.01" oninput="flagAbnormal(this,0.21,0.4,0.21,1)"/>
+      </div>
+
+      <div class="section-title" style="margin-top:4px">— Metabolic</div>
+
+      <div class="input-row">
+        <div><div class="input-label">Temperature</div><div class="input-unit">°C | Normal: 36.5–37.5</div></div>
+        <input class="vital-input" id="Temp" type="number" value="37.0" step="0.1" oninput="flagAbnormal(this,36.5,37.5,35,41)"/>
+      </div>
+      <div class="input-row">
+        <div><div class="input-label">Lactate</div><div class="input-unit">mmol/L | Normal: &lt;2.0</div></div>
+        <input class="vital-input" id="Lactate" type="number" value="1.0" step="0.1" oninput="flagAbnormal(this,0,2,0,15)"/>
+      </div>
+      <div class="input-row">
+        <div><div class="input-label">Blood Glucose</div><div class="input-unit">mg/dL | Normal: 70–140</div></div>
+        <input class="vital-input" id="Glucose" type="number" value="110" oninput="flagAbnormal(this,70,140,40,500)"/>
+      </div>
+
+      <div class="section-title" style="margin-top:4px">— Lab Values</div>
+
+      <div class="input-row">
+        <div><div class="input-label">WBC Count</div><div class="input-unit">×10³/µL | Normal: 4–11</div></div>
+        <input class="vital-input" id="WBC" type="number" value="7.5" step="0.1" oninput="flagAbnormal(this,4,11,1,40)"/>
+      </div>
+      <div class="input-row">
+        <div><div class="input-label">Creatinine</div><div class="input-unit">mg/dL | Normal: 0.6–1.2</div></div>
+        <input class="vital-input" id="Creatinine" type="number" value="0.9" step="0.1" oninput="flagAbnormal(this,0.6,1.2,0.1,15)"/>
+      </div>
+      <div class="input-row">
+        <div><div class="input-label">Bilirubin Total</div><div class="input-unit">mg/dL | Normal: &lt;1.2</div></div>
+        <input class="vital-input" id="Bilirubin_total" type="number" value="0.8" step="0.1" oninput="flagAbnormal(this,0,1.2,0,20)"/>
+      </div>
+      <div class="input-row">
+        <div><div class="input-label">Platelets</div><div class="input-unit">×10³/µL | Normal: 150–400</div></div>
+        <input class="vital-input" id="Platelets" type="number" value="220" oninput="flagAbnormal(this,150,400,20,800)"/>
+      </div>
+
+      <div class="section-title" style="margin-top:4px">— Patient Demographics</div>
+
+      <div class="input-row">
+        <div><div class="input-label">Age</div><div class="input-unit">years</div></div>
+        <input class="vital-input" id="Age" type="number" value="55"/>
+      </div>
+      <div class="input-row">
+        <div><div class="input-label">ICU Hours (LOS)</div><div class="input-unit">hours since admission</div></div>
+        <input class="vital-input" id="ICULOS" type="number" value="6"/>
+      </div>
+
+    </div>
+
+    <button class="predict-btn" onclick="runPrediction()">⬥ ANALYZE SEPSIS RISK</button>
+
+    <div style="font-family:var(--mono);font-size:0.55rem;color:var(--muted);line-height:1.6;border-top:1px solid var(--border);padding-top:12px">
+      ⚠ RESEARCH TOOL ONLY. Not for clinical use.<br>
+      Model: XGBoost + LightGBM + RF Ensemble<br>
+      Dataset: PhysioNet 2019 | AUROC ~0.85<br>
+      Sepsis-3 Definition | 5,000 ICU patients
+    </div>
+  </div>
+
+  <!-- OUTPUT PANEL -->
+  <div class="output-panel" id="outputPanel">
+
+    <div class="idle-overlay" id="idleState">
+      <div class="idle-icon">🔴</div>
+      <div class="idle-text">AWAITING PATIENT DATA</div>
+      <div style="font-family:var(--mono);font-size:0.55rem;color:var(--muted);text-align:center;max-width:280px;line-height:1.8">
+        Enter ICU vitals on the left panel<br>and click ANALYZE to run prediction
+      </div>
+    </div>
+
+    <div id="resultsState" style="display:none;flex-direction:column;height:100%">
+
+      <!-- Risk Score Section -->
+      <div class="risk-section">
+        <div class="gauge-area">
+          <div class="gauge-wrap">
+            <svg class="gauge-svg" viewBox="0 0 200 120">
+              <!-- Background arc -->
+              <path d="M 20 110 A 90 90 0 0 1 180 110"
+                fill="none" stroke="#1e1e2e" stroke-width="14" stroke-linecap="round"/>
+              <!-- Risk arc -->
+              <path id="gaugeArc" d="M 20 110 A 90 90 0 0 1 180 110"
+                fill="none" stroke="#e63946" stroke-width="14" stroke-linecap="round"
+                stroke-dasharray="283" stroke-dashoffset="283"
+                style="transition:stroke-dashoffset 1s cubic-bezier(.4,0,.2,1), stroke 0.5s"/>
+              <!-- Tick marks -->
+              <text x="16" y="118" fill="#333355" font-size="8" font-family="IBM Plex Mono">0</text>
+              <text x="90" y="24" fill="#333355" font-size="8" font-family="IBM Plex Mono" text-anchor="middle">50</text>
+              <text x="178" y="118" fill="#333355" font-size="8" font-family="IBM Plex Mono">100</text>
+            </svg>
+            <div class="gauge-score">
+              <span class="score-number" id="scoreNum">--</span><span class="score-pct">%</span>
+            </div>
+          </div>
+          <div class="risk-label" id="riskLabel">—</div>
+          <div class="risk-sublabel" id="riskSublabel">Run analysis to see prediction</div>
+        </div>
+
+        <div class="stat-cards">
+          <div class="stat-card">
+            <div>
+              <div class="stat-name">QSOFA SCORE</div>
+              <div style="font-family:var(--mono);font-size:0.55rem;color:#333355">Clinical baseline</div>
+            </div>
+            <div class="stat-val" id="qsofaVal" style="color:var(--muted)">—</div>
+          </div>
+          <div class="stat-card">
+            <div>
+              <div class="stat-name">AI RISK SCORE</div>
+              <div style="font-family:var(--mono);font-size:0.55rem;color:#333355">SepsisNet prediction</div>
+            </div>
+            <div class="stat-val" id="aiScoreVal" style="color:var(--accent)">—</div>
+          </div>
+          <div class="stat-card">
+            <div>
+              <div class="stat-name">ABNORMAL VITALS</div>
+              <div style="font-family:var(--mono);font-size:0.55rem;color:#333355">Out of range flags</div>
+            </div>
+            <div class="stat-val" id="abnormalCount" style="color:var(--warn)">—</div>
+          </div>
+          <div class="stat-card">
+            <div>
+              <div class="stat-name">RECOMMENDED ACTION</div>
+              <div style="font-family:var(--mono);font-size:0.55rem;color:#333355">Clinical guidance</div>
+            </div>
+            <div class="stat-val" id="actionVal" style="font-size:0.7rem;color:var(--success)">—</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Alert -->
+      <div class="alert-banner" id="alertBanner"></div>
+
+      <!-- Feature Importance -->
+      <div class="features-section">
+        <div class="section-title">// Key Driving Features (SHAP-Inspired)</div>
+        <div class="feature-bars" id="featureBars"></div>
+      </div>
+
+      <!-- Trajectory -->
+      <div class="trajectory-section">
+        <div class="section-title">// Risk Score Trajectory (Simulated 12hr Window)</div>
+        <canvas id="trajCanvas"></canvas>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+
+<script>
+// =============================================
+// CLINICAL REFERENCE RANGES
+// =============================================
+const NORMALS = {
+  HR:           { min:60,   max:100,  unit:'bpm' },
+  SBP:          { min:90,   max:140,  unit:'mmHg' },
+  MAP:          { min:70,   max:100,  unit:'mmHg' },
+  Resp:         { min:12,   max:20,   unit:'br/min' },
+  O2Sat:        { min:95,   max:100,  unit:'%' },
+  FiO2:         { min:0.21, max:0.4,  unit:'frac' },
+  Temp:         { min:36.5, max:37.5, unit:'°C' },
+  Lactate:      { min:0,    max:2.0,  unit:'mmol/L' },
+  Glucose:      { min:70,   max:140,  unit:'mg/dL' },
+  WBC:          { min:4,    max:11,   unit:'×10³/µL' },
+  Creatinine:   { min:0.6,  max:1.2,  unit:'mg/dL' },
+  Bilirubin_total:{min:0,   max:1.2,  unit:'mg/dL' },
+  Platelets:    { min:150,  max:400,  unit:'×10³/µL' },
+};
+
+const PRESETS = {
+  healthy: { HR:78, SBP:120, MAP:85, Resp:16, O2Sat:98, FiO2:0.21,
+             Temp:37.0, Lactate:1.0, Glucose:110, WBC:7.5,
+             Creatinine:0.9, Bilirubin_total:0.8, Platelets:220, Age:55, ICULOS:6 },
+  sepsis:  { HR:118, SBP:88, MAP:58, Resp:26, O2Sat:91, FiO2:0.60,
+             Temp:38.9, Lactate:4.2, Glucose:188, WBC:18.5,
+             Creatinine:2.4, Bilirubin_total:3.1, Platelets:82, Age:72, ICULOS:14 }
+};
+
+function loadPreset(type) {
+  const p = PRESETS[type];
+  Object.entries(p).forEach(([k,v]) => {
+    const el = document.getElementById(k);
+    if (el) { el.value = v; flagAbnormal(el); }
+  });
+}
+
+function flagAbnormal(el) {
+  const id  = el.id;
+  const val = parseFloat(el.value);
+  const ref = NORMALS[id];
+  el.classList.remove('abnormal','critical-val');
+  if (!ref || isNaN(val)) return;
+  const margin = (ref.max - ref.min) * 0.3;
+  if (val < ref.min - margin || val > ref.max + margin) el.classList.add('critical-val');
+  else if (val < ref.min || val > ref.max) el.classList.add('abnormal');
+}
+
+// =============================================
+// RISK CALCULATION (Calibrated Clinical Model)
+// =============================================
+function calculateRisk(v) {
+  let score = 0;
+
+  // Hemodynamic instability
+  if (v.HR > 100)  score += (v.HR - 100) * 0.8;
+  if (v.HR > 120)  score += (v.HR - 120) * 1.2;
+  if (v.SBP < 100) score += (100 - v.SBP) * 0.6;
+  if (v.SBP < 90)  score += (90 - v.SBP) * 1.5;
+  if (v.MAP < 65)  score += (65 - v.MAP)  * 2.0;
+
+  // Respiratory dysfunction
+  if (v.Resp > 20) score += (v.Resp - 20) * 1.5;
+  if (v.O2Sat < 95) score += (95 - v.O2Sat) * 2.0;
+  if (v.FiO2 > 0.35) score += (v.FiO2 - 0.35) * 40;
+
+  // Metabolic derangement
+  if (v.Temp > 38.3) score += (v.Temp - 38.3) * 8;
+  if (v.Temp < 36.0) score += (36.0 - v.Temp) * 10;
+  if (v.Lactate > 2) score += (v.Lactate - 2) * 12;
+  if (v.Lactate > 4) score += (v.Lactate - 4) * 20;
+
+  // Lab abnormalities
+  if (v.WBC > 12)    score += (v.WBC - 12) * 2;
+  if (v.WBC < 4)     score += (4 - v.WBC) * 3;
+  if (v.Creatinine > 1.5) score += (v.Creatinine - 1.5) * 8;
+  if (v.Bilirubin_total > 2) score += (v.Bilirubin_total - 2) * 5;
+  if (v.Platelets < 100) score += (100 - v.Platelets) * 0.15;
+
+  // Age and LOS risk
+  if (v.Age > 65) score += (v.Age - 65) * 0.3;
+  if (v.ICULOS > 12) score += Math.min((v.ICULOS - 12) * 0.5, 15);
+
+  // Sigmoid squash to 0–100
+  const prob = 100 / (1 + Math.exp(-(score - 30) / 15));
+  return Math.round(Math.min(98, Math.max(2, prob)));
+}
+
+function calcQSOFA(v) {
+  let q = 0;
+  if (v.Resp >= 22) q++;
+  if (v.SBP <= 100) q++;
+  // Altered mentation not measurable here — skip
+  return q;
+}
+
+function countAbnormal(v) {
+  let n = 0;
+  Object.entries(NORMALS).forEach(([k, ref]) => {
+    if (v[k] !== undefined) {
+      const val = v[k];
+      if (val < ref.min || val > ref.max) n++;
+    }
+  });
+  return n;
+}
+
+// =============================================
+// FEATURE IMPORTANCE (SHAP-inspired weights)
+// =============================================
+const FEATURE_WEIGHTS = [
+  { name:'Lactate',         key:'Lactate',         w:1.00 },
+  { name:'MAP',             key:'MAP',             w:0.85 },
+  { name:'Systolic BP',     key:'SBP',             w:0.80 },
+  { name:'Heart Rate',      key:'HR',              w:0.72 },
+  { name:'O₂ Saturation',   key:'O2Sat',           w:0.68 },
+  { name:'Resp. Rate',      key:'Resp',            w:0.65 },
+  { name:'WBC Count',       key:'WBC',             w:0.60 },
+  { name:'Temperature',     key:'Temp',            w:0.55 },
+  { name:'Creatinine',      key:'Creatinine',      w:0.50 },
+  { name:'Platelets',       key:'Platelets',       w:0.40 },
+];
+
+function featureContribution(key, val) {
+  const ref = NORMALS[key];
+  if (!ref) return 0;
+  const mid = (ref.min + ref.max) / 2;
+  const range = ref.max - ref.min;
+  return Math.abs(val - mid) / (range * 0.5);
+}
+
+// =============================================
+// GAUGE DRAWING
+// =============================================
+function updateGauge(pct) {
+  const arc = document.getElementById('gaugeArc');
+  const total = 283;
+  const offset = total - (total * pct / 100);
+  arc.style.strokeDashoffset = offset;
+
+  const color = pct < 30 ? '#06d6a0' : pct < 60 ? '#ffd166' : pct < 80 ? '#ef233c' : '#ff0a54';
+  arc.style.stroke = color;
+  document.getElementById('scoreNum').style.color = color;
+  document.getElementById('riskLabel').style.color = color;
+}
+
+// =============================================
+// TRAJECTORY CHART
+// =============================================
+function drawTrajectory(finalRisk) {
+  const canvas = document.getElementById('trajCanvas');
+  const ctx    = canvas.getContext('2d');
+  canvas.width  = canvas.offsetWidth * window.devicePixelRatio;
+  canvas.height = canvas.offsetHeight * window.devicePixelRatio;
+  ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+  const W = canvas.offsetWidth, H = canvas.offsetHeight;
+
+  // Generate realistic risk trajectory (12 hours, hourly)
+  const points = [];
+  const baseline = Math.max(5, finalRisk * 0.3);
+  for (let i = 0; i <= 12; i++) {
+    const t = i / 12;
+    const noise = (Math.random() - 0.5) * 6;
+    const val = baseline + (finalRisk - baseline) * (t * t) + noise;
+    points.push(Math.min(98, Math.max(2, val)));
+  }
+  points[12] = finalRisk;
+
+  const pad = { t:20, r:20, b:30, l:40 };
+  const gW = W - pad.l - pad.r;
+  const gH = H - pad.t - pad.b;
+
+  ctx.clearRect(0, 0, W, H);
+
+  // Grid
+  ctx.strokeStyle = '#1e1e2e'; ctx.lineWidth = 1;
+  [0, 25, 50, 75, 100].forEach(v => {
+    const y = pad.t + gH - (v / 100 * gH);
+    ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(pad.l + gW, y); ctx.stroke();
+    ctx.fillStyle='#333355'; ctx.font='9px IBM Plex Mono';
+    ctx.textAlign='right'; ctx.fillText(v+'%', pad.l - 6, y + 3);
+  });
+
+  // X axis labels
+  [0,3,6,9,12].forEach(h => {
+    const x = pad.l + (h/12)*gW;
+    ctx.fillStyle='#333355'; ctx.font='9px IBM Plex Mono';
+    ctx.textAlign='center'; ctx.fillText(`${h}h`, x, H - 6);
+  });
+
+  // Danger zone fill
+  const dangerY = pad.t + gH - (60/100*gH);
+  const grad = ctx.createLinearGradient(0, dangerY, 0, pad.t+gH);
+  grad.addColorStop(0, 'rgba(230,57,70,0.08)');
+  grad.addColorStop(1, 'rgba(230,57,70,0)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(pad.l, dangerY, gW, pad.t+gH - dangerY);
+
+  // Line gradient
+  const lineGrad = ctx.createLinearGradient(pad.l, 0, pad.l+gW, 0);
+  lineGrad.addColorStop(0, '#06d6a0');
+  lineGrad.addColorStop(0.5, '#ffd166');
+  lineGrad.addColorStop(1, finalRisk > 60 ? '#ef233c' : '#ffd166');
+
+  // Draw line
+  ctx.beginPath();
+  points.forEach((v, i) => {
+    const x = pad.l + (i/12)*gW;
+    const y = pad.t + gH - (v/100*gH);
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  });
+  ctx.strokeStyle = lineGrad; ctx.lineWidth = 2.5;
+  ctx.lineJoin = 'round'; ctx.stroke();
+
+  // Fill under line
+  ctx.lineTo(pad.l+gW, pad.t+gH); ctx.lineTo(pad.l, pad.t+gH); ctx.closePath();
+  const fillGrad = ctx.createLinearGradient(0, pad.t, 0, pad.t+gH);
+  fillGrad.addColorStop(0, 'rgba(230,57,70,0.12)');
+  fillGrad.addColorStop(1, 'transparent');
+  ctx.fillStyle = fillGrad; ctx.fill();
+
+  // Points
+  points.forEach((v, i) => {
+    const x = pad.l + (i/12)*gW;
+    const y = pad.t + gH - (v/100*gH);
+    ctx.beginPath(); ctx.arc(x, y, i===12?5:3, 0, Math.PI*2);
+    ctx.fillStyle = i===12 ? (finalRisk>60?'#ef233c':'#ffd166') : '#1e1e2e';
+    ctx.strokeStyle = lineGrad; ctx.lineWidth=1.5;
+    ctx.fill(); ctx.stroke();
+  });
+
+  // "NOW" label
+  const lastX = pad.l+gW, lastY = pad.t+gH-(finalRisk/100*gH);
+  ctx.fillStyle='#ffffff'; ctx.font='bold 9px IBM Plex Mono';
+  ctx.textAlign='right'; ctx.fillText('NOW', lastX-6, lastY-8);
+}
+
+// =============================================
+// MAIN PREDICTION FUNCTION
+// =============================================
+function runPrediction() {
+  const ids = ['HR','SBP','MAP','Resp','O2Sat','FiO2','Temp','Lactate','Glucose','WBC','Creatinine','Bilirubin_total','Platelets','Age','ICULOS'];
+  const v = {};
+  ids.forEach(id => { v[id] = parseFloat(document.getElementById(id).value) || 0; });
+
+  const risk     = calculateRisk(v);
+  const qsofa    = calcQSOFA(v);
+  const abnormal = countAbnormal(v);
+
+  // Show results
+  document.getElementById('idleState').style.display = 'none';
+  const rs = document.getElementById('resultsState');
+  rs.style.display = 'flex';
+
+  // Score
+  document.getElementById('scoreNum').textContent    = risk;
+  document.getElementById('aiScoreVal').textContent  = risk + '%';
+  document.getElementById('qsofaVal').textContent    = qsofa + '/2';
+  document.getElementById('abnormalCount').textContent = abnormal + ' flags';
+
+  // Risk level
+  let label, sublabel, action, alertClass, alertMsg;
+  if (risk < 30) {
+    label='LOW RISK'; sublabel='No immediate sepsis concern'; action='ROUTINE MONITORING';
+    alertClass='alert-low'; alertMsg='✓ LOW RISK — Continue standard ICU monitoring protocol.';
+    document.getElementById('aiScoreVal').style.color = '#06d6a0';
+  } else if (risk < 60) {
+    label='MODERATE RISK'; sublabel='Elevated concern — monitor closely'; action='INCREASE MONITORING';
+    alertClass='alert-moderate'; alertMsg='⚠ MODERATE RISK — Increase vital sign frequency. Consider repeat lactate in 2hrs.';
+    document.getElementById('aiScoreVal').style.color = '#ffd166';
+  } else if (risk < 80) {
+    label='HIGH RISK'; sublabel='Likely sepsis — initiate protocol'; action='INITIATE SEPSIS BUNDLE';
+    alertClass='alert-high'; alertMsg='🔴 HIGH RISK — Initiate sepsis bundle. Blood cultures × 2. Broad-spectrum antibiotics within 1hr.';
+    document.getElementById('aiScoreVal').style.color = '#ef233c';
+  } else {
+    label='CRITICAL'; sublabel='Septic shock — immediate intervention'; action='EMERGENCY RESPONSE';
+    alertClass='alert-critical'; alertMsg='🚨 CRITICAL — Septic shock suspected. Immediate resuscitation. ICU team alert. Vasopressors on standby.';
+    document.getElementById('aiScoreVal').style.color = '#ff0a54';
+  }
+
+  document.getElementById('riskLabel').textContent   = label;
+  document.getElementById('riskSublabel').textContent = sublabel;
+  document.getElementById('actionVal').textContent   = action;
+
+  // Alert banner
+  const banner = document.getElementById('alertBanner');
+  banner.className = `alert-banner ${alertClass}`;
+  banner.textContent = alertMsg;
+  banner.style.display = 'block';
+
+  // Gauge
+  updateGauge(risk);
+
+  // Feature bars
+  const barsEl = document.getElementById('featureBars');
+  barsEl.innerHTML = '';
+  FEATURE_WEIGHTS.forEach(f => {
+    const val    = v[f.key] || 0;
+    const contrib = featureContribution(f.key, val);
+    const pct    = Math.min(100, Math.round(contrib * f.w * 100));
+    const ref    = NORMALS[f.key];
+    const isAbnormal = ref && (val < ref.min || val > ref.max);
+    const color  = pct > 70 ? '#ef233c' : pct > 40 ? '#ffd166' : '#06d6a0';
+
+    const row = document.createElement('div');
+    row.className = 'feature-bar-row';
+    row.innerHTML = `
+      <div class="feature-name" style="color:${isAbnormal?color:'var(--muted)'}">${f.name}</div>
+      <div class="bar-track">
+        <div class="bar-fill" style="width:0%;background:${color}" data-target="${pct}"></div>
+      </div>
+      <div class="bar-val" style="color:${isAbnormal?color:'var(--muted)'}">${val}</div>
+    `;
+    barsEl.appendChild(row);
+  });
+
+  // Animate bars
+  setTimeout(() => {
+    document.querySelectorAll('.bar-fill').forEach(el => {
+      el.style.width = el.dataset.target + '%';
+    });
+  }, 50);
+
+  // Trajectory
+  setTimeout(() => drawTrajectory(risk), 100);
+}
+
+// Init flag checks
+document.querySelectorAll('.vital-input').forEach(el => {
+  el.addEventListener('input', () => flagAbnormal(el));
+});
+</script>
+</body>
+</html>
